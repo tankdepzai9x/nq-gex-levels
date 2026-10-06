@@ -2,14 +2,19 @@
 
     python tools/mutation_check.py
 
-Each line below changes one thing in a temporary copy of the repo. "CAUGHT" is good: a test failed.
-"SURVIVED" means no test noticed, so a test is missing.
+First the tests run once on an unmutated copy; if they fail there, nothing else is run (a red suite would make every
+mutation look "caught"). Then each line below changes one thing in a temporary copy of the repo.
+"CAUGHT" is good: a test failed (or ran past the time limit). "SURVIVED" means no test noticed, so a test is missing.
+"PATTERN MISSING" means the text to change is no longer in the code; "BROKEN PATTERN" means the changed file no longer
+compiles, so the failure would say nothing about the tests. Both count as problems, like a survivor.
 """
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+
+TIMEOUT = 300    # seconds allowed for one run of the whole test suite
 
 MUTATIONS = [
     ("gex/compute.py", "return total\n", "return -total\n", "net GEX sign flipped"),
@@ -29,13 +34,42 @@ MUTATIONS = [
 ]
 
 
+def run_tests(cwd):
+    """Run the whole suite in `cwd`. Returns (finished, result): finished is False if it ran past TIMEOUT."""
+    try:
+        result = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-t", "."],
+                                cwd=cwd, capture_output=True, text=True, timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return False, None
+    return True, result
+
+
+def copy_repo(root, work):
+    shutil.copytree(root, work, ignore=shutil.ignore_patterns(".git", "node_modules", "__pycache__", ".tmp"))
+
+
 def main():
     root = os.getcwd()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        work = os.path.join(tmp, "repo")
+        copy_repo(root, work)
+        finished, result = run_tests(work)
+    if not finished:
+        print(f"BASELINE FAILED: the unmutated tests ran longer than {TIMEOUT} s. Nothing else was run.")
+        return 2
+    if result.returncode != 0:
+        print("BASELINE FAILED: the tests do not pass on the unmutated code, so the results below would mean nothing.")
+        print("Run this from the repo root, and fix the tests first. Last lines of their output:")
+        print("\n".join((result.stderr or result.stdout).strip().splitlines()[-15:]))
+        return 2
+    print("baseline: tests pass on the unmutated code")
+
     survivors = 0
     for path, old, new, why in MUTATIONS:
         with tempfile.TemporaryDirectory() as tmp:
             work = os.path.join(tmp, "repo")
-            shutil.copytree(root, work, ignore=shutil.ignore_patterns(".git", "node_modules", "__pycache__", ".tmp"))
+            copy_repo(root, work)
             target = os.path.join(work, path)
             with open(target, encoding="utf-8") as fh:
                 text = fh.read()
@@ -43,13 +77,22 @@ def main():
                 print(f"PATTERN MISSING in {path}: {why}")
                 survivors += 1
                 continue
+            mutated = text.replace(old, new, 1)
+            try:
+                compile(mutated, target, "exec")
+            except (SyntaxError, ValueError) as exc:
+                print(f"BROKEN PATTERN in {path}: {why} (the changed file does not compile: {exc})")
+                survivors += 1
+                continue
             with open(target, "w", encoding="utf-8") as fh:
-                fh.write(text.replace(old, new, 1))
-            result = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-t", "."],
-                                    cwd=work, capture_output=True, text=True)
-            caught = result.returncode != 0
-            print(("CAUGHT   " if caught else "SURVIVED ") + why)
-            survivors += 0 if caught else 1
+                fh.write(mutated)
+            finished, result = run_tests(work)
+            if not finished:
+                print(f"CAUGHT   {why} (the tests ran past {TIMEOUT} s)")
+            else:
+                caught = result.returncode != 0
+                print(("CAUGHT   " if caught else "SURVIVED ") + why)
+                survivors += 0 if caught else 1
     print(f"survivors or missing patterns: {survivors}")
     return 1 if survivors else 0
 

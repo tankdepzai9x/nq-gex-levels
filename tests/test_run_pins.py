@@ -70,6 +70,10 @@ class BuildPasteSnapshotTests(unittest.TestCase):
         ndx, qqq = rich_chains()
         self.assertEqual(build_paste(ndx, qqq, datetime(2026, 10, 6, 12, 45), "am")[0], GOLDEN)
 
+    def test_a_pm_run_asks_for_the_next_paste_at_the_next_weekday_open(self):
+        text, _ = build_paste(ndx_obj(), qqq_obj(), datetime(2026, 10, 6, 22, 30), "pm")      # Tuesday 18:30 ET
+        self.assertEqual(decode(text)["next"], to_ms(datetime(2026, 10, 7, 13, 30)))         # Wednesday 09:30 ET
+
     def test_an_expiry_exactly_seven_days_out_is_in_the_near_set(self):
         opts = make_chain("NDXP", date(2026, 10, 12), 7, 31010.0, range(30000, 32001, 100),
                           lambda k, s: 5000 if (k, s) == ("C", 31300) else 100)
@@ -143,6 +147,23 @@ class MainPinTests(unittest.TestCase):
         self.run_main("2026-10-06T11:00:00", "--slot", "am")      # 07:00 ET, before the am window opens
         before = self.read_out()
         _, said = self.run_main("2026-10-06T12:45:00", "--skip-if-fresh")
+        self.assertIn("already this slot's result", said)
+        self.assertEqual(self.read_out(), before)
+
+    def test_a_late_duplicate_after_utc_midnight_is_still_skipped_without_downloading(self):
+        self.run_main("2026-10-06T22:30:00", "--skip-if-fresh")           # pm run at 18:30 ET
+        before = self.read_out()
+        argv = ["--out", self.out, "--history", self.hist, "--now-utc", "2026-10-07T00:10:00", "--skip-if-fresh"]
+        buf = StringIO()                                                  # 20:10 ET on the 6th, inside the pm window; the UTC date is already the 7th
+        with mock.patch("gex.run.fetch_json", side_effect=AssertionError("must not download")), redirect_stdout(buf):
+            self.assertEqual(main(argv), 0)
+        self.assertIn("nothing downloaded", buf.getvalue())
+        self.assertEqual(self.read_out(), before)
+
+    def test_same_data_is_not_rewritten_when_the_two_runs_straddle_utc_midnight(self):
+        self.run_main("2026-10-06T18:00:00", "--slot", "pm")              # by hand at 14:00 ET, outside the window
+        before = self.read_out()
+        _, said = self.run_main("2026-10-07T00:10:00", "--skip-if-fresh")  # 20:10 ET the same Eastern day, UTC date is the 7th
         self.assertIn("already this slot's result", said)
         self.assertEqual(self.read_out(), before)
 
