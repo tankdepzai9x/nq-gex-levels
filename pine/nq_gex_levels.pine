@@ -64,6 +64,9 @@ addLevel(array<float> px, array<string> nm, array<color> col, float p, string n,
         array.push(nm, n)
         array.push(col, c)
 
+tagText(color c) =>
+    0.299 * color.r(c) + 0.587 * color.g(c) + 0.114 * color.b(c) < 150 ? color.white : #131722
+
 tablePos(string s) =>
     switch s
         "Top right"    => position.top_right
@@ -257,7 +260,7 @@ if barstate.islast
                 if not array.get(bBand, i)
                     array.push(lns, line.new(anchorBar, y, anchorBar + 1, y, xloc.bar_index, fullIn ? extend.both : extend.right, c, line.style_solid, 1))
                 if lblStyle == "Tag"
-                    array.push(lbs, label.new(bar_index + tagOff, y, array.get(bTxt, i), xloc.bar_index, yloc.price, c, label.style_label_left, dark, sizeStr))
+                    array.push(lbs, label.new(bar_index + tagOff, y, array.get(bTxt, i), xloc.bar_index, yloc.price, c, label.style_label_left, tagText(c), sizeStr))
                 else
                     array.push(lbs, label.new(bar_index + tagOff, y, array.get(bTxt, i), xloc.bar_index, yloc.price, color(na), label.style_label_left, c, sizeStr))
 
@@ -280,7 +283,7 @@ if barstate.islast
                     int x1 = bar_index + offIn
                     array.push(bxs, box.new(x1, y + 7.5, x1 + len, y - 7.5, border_color = color(na), bgcolor = color.new(v >= 0 ? cBarPos : cBarNeg, 35)))
                     if math.abs(v) >= maxAbs * lblPct / 100.0
-                        array.push(lbs, label.new(x1 + len + 1, y, fmtK(v), xloc.bar_index, yloc.price, color(na), label.style_label_left, color.new(v >= 0 ? cBarPos : cBarNeg, 0), size.tiny))
+                        array.push(lbs, label.new(x1 + len + 1, y, fmtK(v), xloc.bar_index, yloc.price, color(na), label.style_label_left, #D1D4DC, size.tiny))
 
         // 6) regime line (small) and warnings (only when needed)
         int mins = int((timenow - genMs) / 60000)

@@ -198,5 +198,16 @@ check('Tag position 0: the three tags sit on the last bar', tags(r).length === 3
 r = await run({ inputs: { [TAG_IN]: 100, Labels: 'Text' } });
 check('Tag position 100 with Text labels: the three tags sit 100 bars right of the last bar', tags(r).length === 3 && tags(r).every((l) => l.x === LAST_BAR + 100), JSON.stringify(tags(r).map((l) => l.x)));
 
+// 12. text on the filled tags is readable: white on dark fills (red, green), dark on the light grey; bar labels are light grey
+r = await run();
+const tagTextOf = (name) => r.labels.find((l) => l.text === name)?.textcolor;
+check('Put Wall tag (green fill) has white text', tagTextOf('Put Wall') === '#FFFFFFFF', tagTextOf('Put Wall'));
+check('Call Wall tag (red fill) has white text', tagTextOf('Call Wall') === '#FFFFFFFF', tagTextOf('Call Wall'));
+check('Zero Gamma tag (light grey fill) keeps dark text', tagTextOf('Zero Gamma') === '#131722FF', tagTextOf('Zero Gamma'));
+const barLabels = r.labels.filter((l) => /^-?[\d.]+[KMB]$/.test(l.text));
+check('every bar label is light grey, whatever the bar colour', barLabels.length > 0 && barLabels.every((l) => l.textcolor === '#D1D4DCFF'), JSON.stringify(barLabels.map((l) => l.textcolor)));
+r = await run({ inputs: { Labels: 'Text' } });
+check('Text labels keep the level colour as the text colour', tagTextOf('Put Wall') === '#089981FF', tagTextOf('Put Wall'));
+
 console.log(failures ? `${failures} check(s) failed` : 'all pine checks passed');
 process.exit(failures ? 1 : 0);
