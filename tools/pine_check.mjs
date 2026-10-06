@@ -156,7 +156,7 @@ r = await run({ paste: GOLDEN.replace(/(prof [^\n]*) 300:30000/, '$1 300:abc') }
 check('a prof value that is not a number (300:abc) drops only that bar', r.row0.startsWith('Positive gamma') && r.boxes.length === 25, `boxes=${r.boxes.length} ${r.row0}`);
 check('the bar labels are still drawn after 300:abc', r.labels.some((l) => /^-?[\d.]+[KMB]$/.test(l.text)));
 
-// 10. the chart's bars must end at the as-of time (within 15 minutes) or nothing is drawn and the banner says why
+// 10. the chart's bars must end at the as-of time (within 5 minutes) or nothing is drawn and the banner says why
 r = await run({ step: 1 });
 check('1-minute bars: call wall = anchor + 175', r.plots['Call wall'] === 31525 && r.row0.startsWith('Positive gamma'), `${JSON.stringify(r.plots)} ${r.row0}`);
 r = await run({ step: 15 });
@@ -176,6 +176,27 @@ check('a gap of exactly 5 minutes still draws (call wall = anchor bar + 175)', r
 r = await run({ step: 10, gap: 6 });
 check('a gap of 6 minutes shows the "bars do not end" banner', r.row0.startsWith("This chart's bars do not end") && r.row0.includes('(16:00 ET)'), r.row0);
 check('a gap of 6 minutes draws nothing', r.lines.length === 0 && r.labels.length === 0 && r.boxes.length === 0 && off(r.plots['Call wall']), `lines=${r.lines.length} labels=${r.labels.length} boxes=${r.boxes.length} ${JSON.stringify(r.plots)}`);
+
+// 11. the Tag position setting moves only the level tags (Call Wall, Put Wall, Zero Gamma), measured in bars right of the last candle
+const TAG_IN = 'Tag position (bars right of price)';
+const LAST_BAR = makeBars().length - 1;
+const isTag = (l) => ['Call Wall', 'Put Wall', 'Zero Gamma'].includes(l.text);
+const tags = (x) => x.labels.filter(isTag);
+const tagsOnly = (x) => JSON.stringify(tags(x).map(({ x: _x, ...rest }) => rest));    // everything about the tags except where they sit
+const everythingElse = (x) => JSON.stringify([x.lines, x.boxes, x.labels.filter((l) => !isTag(l)), x.row0, x.row1, x.plots]);
+const inputLines = SRC.split('\n').filter((ln) => ln.includes(' = input.') && !ln.startsWith('//'));
+const lastInput = inputLines[inputLines.length - 1];
+check('Tag position is the LAST input of the script, default 2, in the Style group', lastInput.includes(`input.int(2, "${TAG_IN}"`) && lastInput.includes('group = G_STY'), lastInput);
+const atDefault = await run();
+check('default: the three tags sit 2 bars right of the last bar', tags(atDefault).length === 3 && tags(atDefault).every((l) => l.x === LAST_BAR + 2), JSON.stringify(tags(atDefault).map((l) => l.x)));
+r = await run({ inputs: { [TAG_IN]: 100 } });
+check('Tag position 100: the three tags sit 100 bars right of the last bar', tags(r).length === 3 && tags(r).every((l) => l.x === LAST_BAR + 100), JSON.stringify(tags(r).map((l) => l.x)));
+check('Tag position 100: tag text, colours, styles and heights are unchanged', tags(r).length === 3 && tagsOnly(r) === tagsOnly(atDefault));
+check('Tag position 100: lines, band, bars, bar labels, regime line and price-scale tags are unchanged', everythingElse(r) === everythingElse(atDefault));
+r = await run({ inputs: { [TAG_IN]: 0 } });
+check('Tag position 0: the three tags sit on the last bar', tags(r).length === 3 && tags(r).every((l) => l.x === LAST_BAR), JSON.stringify(tags(r).map((l) => l.x)));
+r = await run({ inputs: { [TAG_IN]: 100, Labels: 'Text' } });
+check('Tag position 100 with Text labels: the three tags sit 100 bars right of the last bar', tags(r).length === 3 && tags(r).every((l) => l.x === LAST_BAR + 100), JSON.stringify(tags(r).map((l) => l.x)));
 
 console.log(failures ? `${failures} check(s) failed` : 'all pine checks passed');
 process.exit(failures ? 1 : 0);

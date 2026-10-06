@@ -49,6 +49,7 @@ string lblSize  = input.string("tiny", "Label size", ["tiny", "small", "normal"]
 bool   fullIn   = input.bool(true, "Lines span the whole chart", group = G_STY, tooltip = "Off = lines start at the data's as-of time.")
 float  mergeIn  = input.float(1.0, "Merge labels closer than (points)", minval = 0.0, step = 0.25, group = G_STY)
 float  zoneIn   = input.float(12.0, "Zero gamma band half-height (points)", minval = 1.0, step = 1.0, group = G_STY)
+int    tagOff   = input.int(2, "Tag position (bars right of price)", minval = 0, maxval = 490, group = G_STY, tooltip = "How far right of the last candle the level tags (Call Wall, Put Wall, Zero Gamma) sit. Raise it to move them toward the right edge. TradingView cannot pin a tag to the screen edge, so if you zoom a lot you may need to adjust it.")
 //#endregion
 
 //#region ───── Helpers
@@ -256,9 +257,9 @@ if barstate.islast
                 if not array.get(bBand, i)
                     array.push(lns, line.new(anchorBar, y, anchorBar + 1, y, xloc.bar_index, fullIn ? extend.both : extend.right, c, line.style_solid, 1))
                 if lblStyle == "Tag"
-                    array.push(lbs, label.new(bar_index + 2, y, array.get(bTxt, i), xloc.bar_index, yloc.price, c, label.style_label_left, dark, sizeStr))
+                    array.push(lbs, label.new(bar_index + tagOff, y, array.get(bTxt, i), xloc.bar_index, yloc.price, c, label.style_label_left, dark, sizeStr))
                 else
-                    array.push(lbs, label.new(bar_index + 2, y, array.get(bTxt, i), xloc.bar_index, yloc.price, color(na), label.style_label_left, c, sizeStr))
+                    array.push(lbs, label.new(bar_index + tagOff, y, array.get(bTxt, i), xloc.bar_index, yloc.price, color(na), label.style_label_left, c, sizeStr))
 
         // 4) zero gamma band
         if showZg and zoneZg and not na(flipD)
