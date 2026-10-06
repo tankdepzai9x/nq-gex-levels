@@ -150,9 +150,10 @@ if barstate.isfirst
 //#endregion
 
 //#region ───── The chart's own price at the data's as-of time
-// The last bar that closes at or before the as-of time is the anchor, but only if it ends within 15 minutes of it. A bar that ends
-// earlier (a 45-minute bar, or a daily bar that ends at 17:00 ET) does not hold the price at the as-of time: draw nothing and say so.
-int MAX_GAP_MS = 15 * 60 * 1000
+// The last bar that closes at or before the as-of time is the anchor, but only if it ends within 5 minutes of it. A bar that ends
+// earlier (a 15- or 45-minute bar that is out of step with the as-of time, or a daily bar that ends at 17:00 ET) does not hold the
+// price at the as-of time: draw nothing and say so.
+int MAX_GAP_MS = 5 * 60 * 1000
 var float anchorPx    = na
 var int   anchorBar   = na
 var int   anchorClose = na

@@ -11,16 +11,20 @@ const compiled = compile(SRC);
 // Bars of stepMin minutes (5 unless a check says otherwise) from 2026-10-05 13:30Z to 2026-10-06 13:30Z. The bar that closes at the
 // anchor closes at 31350. Every later bar closes at 31355 (so a script that anchors on any other bar draws a different level),
 // except the very last bar, which closes at 31410 (60 above the anchor bar). With 45-minute bars no bar closes at the anchor.
-function makeBars(stepMin = 5) {
+// gapMin (default: none) lines the bars up so that the last bar closing at or before the anchor closes gapMin minutes before it
+// (and is the 31350 bar). A 45-minute chart aligned to the 18:00 ET session start has gapMin 15.
+function makeBars(stepMin = 5, gapMin = null) {
   const step = stepMin * 60000;
+  const asOfClose = gapMin === null ? ANCHOR_MS : ANCHOR_MS - gapMin * 60000;
   const bars = [];
   let px = 31300;
-  const start = Date.parse('2026-10-05T13:30:00Z');
+  const from = Date.parse('2026-10-05T13:30:00Z');
+  const start = gapMin === null ? from : asOfClose - Math.floor((asOfClose - from) / step) * step;
   const end = Date.parse('2026-10-06T13:30:00Z');
   for (let t = start; t < end; t += step) {
     const closeT = t + step;
     const last = closeT >= end;
-    const c = closeT === ANCHOR_MS ? 31350 : closeT > ANCHOR_MS ? (last ? 31410 : 31355) : px + Math.sin(t / 3e6) * 4;
+    const c = closeT === asOfClose ? 31350 : closeT > asOfClose ? (last ? 31410 : 31355) : px + Math.sin(t / 3e6) * 4;
     bars.push({ time: t, open: px, high: Math.max(px, c) + 2, low: Math.min(px, c) - 2, close: c, volume: 100 });
     px = c;
   }
@@ -29,10 +33,11 @@ function makeBars(stepMin = 5) {
 
 // set: the Expiry set to select (NEAR unless a check says otherwise; null leaves the input out, so the script's own default applies).
 // step: the bar length in minutes (also the chart's timeframe).
-async function run({ paste = GOLDEN, nowIso = '2026-10-06T13:15:00Z', inputs = {}, set = 'NEAR', step = 5 } = {}) {
+// gap: see makeBars (null = the bars as they come, from 13:30Z).
+async function run({ paste = GOLDEN, nowIso = '2026-10-06T13:15:00Z', inputs = {}, set = 'NEAR', step = 5, gap = null } = {}) {
   globalThis.__TIMENOW = Date.parse(nowIso);
   const given = { 'Paste levels': paste, ...(set === null ? {} : { 'Expiry set': set }), ...inputs };
-  const eng = new Engine(compiled, new ArrayFeed(makeBars(step)), { inputs: given });
+  const eng = new Engine(compiled, new ArrayFeed(makeBars(step, gap)), { inputs: given });
   await eng.run({ symbol: 'CME_MINI:NQ1!', timeframe: String(step), mintick: 0.25 });
   const kind = (d) => d.kind ?? d.type;
   const of = (k) => eng.drawings.filter((d) => kind(d) === k);
@@ -160,6 +165,17 @@ r = await run({ step: 45 });
 check('45-minute bars (none ends at the as-of time): the banner explains', r.row0.startsWith("This chart's bars do not end") && r.row0.includes('(16:00 ET)'), r.row0);
 check('45-minute bars: nothing is drawn', r.lines.length === 0 && r.labels.length === 0 && r.boxes.length === 0, `lines=${r.lines.length} labels=${r.labels.length} boxes=${r.boxes.length}`);
 check('45-minute bars: no price-scale tags', off(r.plots['Call wall']) && off(r.plots['Put wall']) && off(r.plots['Zero gamma']), JSON.stringify(r.plots));
+// 45-minute bars aligned to the 18:00 ET session start: the last bar before 16:00 ET closes at 15:45 ET, exactly 15 minutes early
+r = await run({ step: 45, gap: 15 });
+check('45-minute bars from the 18:00 ET start (15 minutes early): the banner explains', r.row0.startsWith("This chart's bars do not end") && r.row0.includes('(16:00 ET)'), r.row0);
+check('45-minute bars from the 18:00 ET start: nothing is drawn', r.lines.length === 0 && r.labels.length === 0 && r.boxes.length === 0, `lines=${r.lines.length} labels=${r.labels.length} boxes=${r.boxes.length}`);
+check('45-minute bars from the 18:00 ET start: no price-scale tags', off(r.plots['Call wall']) && off(r.plots['Put wall']) && off(r.plots['Zero gamma']), JSON.stringify(r.plots));
+// the tolerance edge (10-minute bars): a last bar that closes exactly 5 minutes early still draws, 6 minutes early does not
+r = await run({ step: 10, gap: 5 });
+check('a gap of exactly 5 minutes still draws (call wall = anchor bar + 175)', r.plots['Call wall'] === 31525 && r.row0.startsWith('Positive gamma'), `${JSON.stringify(r.plots)} ${r.row0}`);
+r = await run({ step: 10, gap: 6 });
+check('a gap of 6 minutes shows the "bars do not end" banner', r.row0.startsWith("This chart's bars do not end") && r.row0.includes('(16:00 ET)'), r.row0);
+check('a gap of 6 minutes draws nothing', r.lines.length === 0 && r.labels.length === 0 && r.boxes.length === 0 && off(r.plots['Call wall']), `lines=${r.lines.length} labels=${r.labels.length} boxes=${r.boxes.length} ${JSON.stringify(r.plots)}`);
 
 console.log(failures ? `${failures} check(s) failed` : 'all pine checks passed');
 process.exit(failures ? 1 : 0);
