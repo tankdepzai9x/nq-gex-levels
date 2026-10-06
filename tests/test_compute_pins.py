@@ -2,9 +2,12 @@
 
 Found with hand-made mutants of gex/compute.py: the value of the zero-gamma level, the distance caps on the put wall,
 the top strikes and the profile, top_n, dollar sizes, one-sided books and the max_days boundary.
+
+Also junk that build_records must skip instead of crashing on: a strike of 0, and an expiry whose put-call parity
+forward is not positive.
 """
 import unittest
-from datetime import timedelta
+from datetime import date, timedelta
 
 from gex.bs import dollar_gamma_per_pct
 from gex.chain import load_snapshot
@@ -22,6 +25,12 @@ def far_both_sides(kind, strike):
     if (kind, strike) == ("C", 32200) or (kind, strike) == ("P", 29800):
         return 1_000_000                                    # huge open interest, 1190 above and 1210 below
     return big_call_and_put(kind, strike)
+
+
+def raw_option(root, expiry, kind, strike, bid, ask, oi=100.0, iv=0.2):
+    """A hand-made Cboe option entry, for junk that make_option cannot build (strike 0, absurd quotes)."""
+    return {"option": f"{root}{expiry:%y%m%d}{kind}{int(round(strike * 1000)):08d}", "bid": bid, "ask": ask,
+            "iv": iv, "open_interest": oi}
 
 
 class FlipValueTests(unittest.TestCase):
@@ -121,6 +130,35 @@ class MaxDaysBoundaryTests(unittest.TestCase):
         d46 = ASOF.date() + timedelta(days=46)
         dropped = synthetic_snapshot(lambda k, s: 100, expiry=d46, days=46)
         self.assertEqual(build_records(dropped, ASOF, 45, 0.04, 1.0)[0], [])
+
+
+class JunkChainTests(unittest.TestCase):
+    def snapshot(self, junk):
+        opts = make_chain("NDXP", EXPIRY, 3, FWD, STRIKES, big_call_and_put) + junk
+        return load_snapshot(make_file("_NDX", 31000.0, "2026-10-05T16:00:00", "2026-10-06 03:44:52", opts))
+
+    def test_strike_zero_contracts_are_ignored(self):
+        junk = [raw_option("NDXP", EXPIRY, kind, 0.0, 0.0, 0.0, oi=10.0) for kind in ("C", "P")]
+        snap = self.snapshot(junk)
+        self.assertEqual(sum(1 for c in snap.contracts if c.strike == 0.0), 2)     # the junk really was loaded
+        recs, _ = build_records(snap, ASOF, 45, 0.04, 1.0)
+        self.assertNotIn(0.0, {r.strike for r in recs})
+        lv = compute_levels(recs, 18.0, 31000.0, 0.04)                             # used to raise ZeroDivisionError
+        self.assertEqual((lv.cw, lv.pw), (300.0, -300.0))
+
+    def test_expiry_with_a_non_positive_parity_forward_is_skipped_with_a_note(self):
+        junk_expiry = date(2026, 10, 9)             # a day after the good expiry
+        # calls worth about 1 and puts worth about 40,000 at three strikes: parity then implies a forward near -9,000
+        junk = [raw_option("NDXP", junk_expiry, "C", k, 0.5, 1.5) for k in (30900, 31000, 31100)]
+        junk += [raw_option("NDXP", junk_expiry, "P", k, 39999.0, 40001.0) for k in (30900, 31000, 31100)]
+        recs, notes = build_records(self.snapshot(junk), ASOF, 45, 0.04, 1.0)
+        self.assertEqual({r.days for r in recs}, {3})                              # only the good expiry is left
+        self.assertEqual(len(notes), 1)
+        self.assertIn("2026-10-09", notes[0])
+        self.assertIn("non-positive forward", notes[0])
+        self.assertIn("skipped", notes[0])
+        lv = compute_levels(recs, 18.0, 31000.0, 0.04)                             # used to raise ValueError
+        self.assertEqual((lv.cw, lv.pw), (300.0, -300.0))
 
 
 if __name__ == "__main__":

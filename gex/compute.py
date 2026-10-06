@@ -66,8 +66,11 @@ def build_records(snap, anchor_et, max_days, rate, scale):
         if fwd is None:
             notes.append(f"{root} {expiry}: no strike with both a call and a put quote; skipped")
             continue
+        if fwd <= 0:
+            notes.append(f"{root} {expiry}: put-call parity gives a non-positive forward ({fwd:.2f}); skipped")
+            continue
         for c in contracts:
-            if c.oi > 0 and c.iv > 0:
+            if c.oi > 0 and c.iv > 0 and c.strike > 0:
                 recs.append(Rec(c.kind, c.strike, fwd, T, days, c.iv, c.oi, scale))
     return recs, notes
 
