@@ -42,6 +42,26 @@ def encode(gen_ms, slot, anchor_ms, next_ms, sets):
     return "\n".join(lines) + "\n"
 
 
+def _top_cell(token):
+    """One 'distance:+' or 'distance:-' token of a top line."""
+    dist, _, flag = token.partition(":")
+    if flag in ("+", "-"):
+        try:
+            return float(dist), flag == "+"
+        except ValueError:
+            pass
+    raise ValueError(f"bad top token {token!r}: expected distance:+ or distance:-")
+
+
+def _prof_cell(token):
+    """One 'distance:thousands' token of a prof line."""
+    dist, _, value = token.partition(":")
+    try:
+        return float(dist), float(value)
+    except ValueError:
+        raise ValueError(f"bad prof token {token!r}: expected distance:value") from None
+
+
 def decode(text):
     """Reference parser. Returns {'gen','slot','anchor','next','sets':{name:{...}}}. Raises ValueError on bad input."""
     lines = [ln.strip() for ln in text.replace("\r", "").lstrip("\ufeff").split("\n") if ln.strip()]
@@ -63,7 +83,7 @@ def decode(text):
         elif cur is not None and key in ("flip", "cw", "pw", "em"):
             cur[key] = float(rest)
         elif cur is not None and key == "top":
-            cur["top"] = [(float(t.split(":")[0]), t.split(":")[1] == "+") for t in rest.split()]
+            cur["top"] = [_top_cell(t) for t in rest.split()]
         elif cur is not None and key == "prof":
-            cur["prof"] = [(float(t.split(":")[0]), float(t.split(":")[1])) for t in rest.split()]
+            cur["prof"] = [_prof_cell(t) for t in rest.split()]
     return out

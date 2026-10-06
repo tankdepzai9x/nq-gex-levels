@@ -63,5 +63,42 @@ class DecodePinTests(unittest.TestCase):
             self.assertIsInstance(out[key], int)
 
 
+class DecodeRejectsMalformedTokensTests(unittest.TestCase):
+    """decode promises ValueError on bad input, and the freshness checks that call it catch only ValueError."""
+
+    def assert_rejected(self, line, key, token):
+        with self.assertRaises(ValueError) as caught:
+            decode("GEX1\nset NEAR\nreg P\n" + line + "\n")
+        self.assertIn(key, str(caught.exception))       # the message names the kind of line...
+        self.assertIn(token, str(caught.exception))     # ...and the bad token
+
+    def test_top_token_without_a_colon(self):
+        for line, token in (("top -200:- 777", "777"), ("top 777", "777")):
+            with self.subTest(line=line):
+                self.assert_rejected(line, "top", token)
+
+    def test_top_token_with_a_non_numeric_distance(self):
+        self.assert_rejected("top abc:+", "top", "abc:+")
+
+    def test_unknown_top_flag(self):
+        for line, token in (("top 100:x", "100:x"), ("top 100:", "100:"), ("top 100:++", "100:++"),
+                            ("top 100:+:9", "100:+:9")):
+            with self.subTest(line=line):
+                self.assert_rejected(line, "top", token)
+
+    def test_prof_token_without_a_colon(self):
+        for line, token in (("prof -100:-4200 777", "777"), ("prof 777", "777")):
+            with self.subTest(line=line):
+                self.assert_rejected(line, "prof", token)
+
+    def test_prof_token_with_a_non_numeric_value(self):
+        for line, token in (("prof -100:-4200 100:abc", "100:abc"), ("prof 100:", "100:"), ("prof 1:2:3", "1:2:3")):
+            with self.subTest(line=line):
+                self.assert_rejected(line, "prof", token)
+
+    def test_prof_token_with_a_non_numeric_distance(self):
+        self.assert_rejected("prof abc:100", "prof", "abc:100")
+
+
 if __name__ == "__main__":
     unittest.main()
