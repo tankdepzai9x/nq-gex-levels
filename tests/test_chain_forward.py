@@ -46,6 +46,17 @@ class ChainTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             load_snapshot(obj)
 
+    def test_wrong_types_in_key_fields_also_raise_a_clear_error(self):
+        # A JSON array or null instead of an object, or a null price, make Python raise TypeError internally;
+        # load_snapshot must report all of them as the one documented ValueError.
+        for not_an_object in ([], None):
+            with self.assertRaises(ValueError):
+                load_snapshot(not_an_object)
+        obj = snapshot_obj([])
+        obj["data"]["current_price"] = None
+        with self.assertRaises(ValueError):
+            load_snapshot(obj)
+
 
 class ForwardTests(unittest.TestCase):
     def contracts(self, fwd, half_spread=0.5):
@@ -57,6 +68,37 @@ class ForwardTests(unittest.TestCase):
         for fwd in (31010.0, 30950.5):
             est = estimate_forward(self.contracts(fwd), 3 / 365.0, 0.04, 31000.0)
             self.assertAlmostEqual(est, fwd, delta=0.05)
+
+    def test_recovers_the_forward_from_parity_on_a_long_expiry(self):
+        # 180 days at 4%: exp(rT) is about 1.02, so a missing or inverted discount factor misses F by 0.2 to 1.9
+        # points here. At 3 days the miss is under 0.04, below the delta of test_recovers_the_forward_from_parity,
+        # which therefore cannot see it.
+        long_expiry = date(2027, 4, 3)  # 180 days after the 2026-10-05 last trade in snapshot_obj
+        for fwd in (31010.0, 30950.5):
+            opts = make_chain("NDXP", long_expiry, 180, fwd, [30800, 30900, 31000, 31100, 31200], lambda k, s: 100)
+            contracts = load_snapshot(snapshot_obj(opts)).contracts
+            est = estimate_forward(contracts, 180 / 365.0, 0.04, 31000.0)
+            self.assertAlmostEqual(est, fwd, delta=0.05)
+
+    def test_takes_the_median_of_the_five_nearest_strikes(self):
+        # Hand-built quotes whose put-call parity implies a different forward at every strike. Rate 0 keeps the
+        # arithmetic exact: F = K + (C - P), with every price a multiple of 0.5. Strikes are listed nearest first to
+        # the 31000 reference; the last is 5000 points away. Each row gives the implied forwards as offsets from
+        # 31000 (the last is the far outlier) and the median of the nearest five. The order is chosen so that any
+        # other count of strikes, the farthest five, the lowest or highest value, or a neighbour of the middle value
+        # gives a different answer; the second row repeats no value, so it also separates the middle value from the
+        # one just below it.
+        ref = 31000.0
+        strikes = [31000.0, 31010.0, 30980.0, 31030.0, 30960.0, 36000.0]
+        for offsets, median in (([-10, 50, 10, 0, 0, 5000], 0), ([-10, 50, 10, 3, 0, 5000], 3)):
+            with self.subTest(offsets=offsets):
+                contracts = []
+                for strike, offset in zip(strikes, offsets):
+                    diff = ref + offset - strike  # C - P at this strike
+                    call, put = (100.0 + diff, 100.0) if diff >= 0 else (100.0, 100.0 - diff)
+                    contracts += [Contract("NDXP", EXPIRY, "C", strike, 0.2, 10, call - 0.5, call + 0.5),
+                                  Contract("NDXP", EXPIRY, "P", strike, 0.2, 10, put - 0.5, put + 0.5)]
+                self.assertEqual(estimate_forward(contracts, 3 / 365.0, 0.0, ref), ref + median)
 
     def test_returns_none_without_two_sided_quotes(self):
         dead = [Contract("NDXP", EXPIRY, "C", 31000.0, 0.2, 10, 0.0, 0.0),
