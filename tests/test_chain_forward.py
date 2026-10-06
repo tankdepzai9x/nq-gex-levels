@@ -82,15 +82,19 @@ class ForwardTests(unittest.TestCase):
 
     def test_takes_the_median_of_the_five_nearest_strikes(self):
         # Hand-built quotes whose put-call parity implies a different forward at every strike. Rate 0 keeps the
-        # arithmetic exact: F = K + (C - P), with every price a multiple of 0.5. Strikes are listed nearest first to
-        # the 31000 reference; the last is 5000 points away. Each row gives the implied forwards as offsets from
-        # 31000 (the last is the far outlier) and the median of the nearest five. The order is chosen so that any
-        # other count of strikes, the farthest five, the lowest or highest value, or a neighbour of the middle value
-        # gives a different answer; the second row repeats no value, so it also separates the middle value from the
-        # one just below it.
+        # arithmetic exact: F = K + (C - P), with every price a multiple of 0.5. Each row is (strikes, forwards
+        # implied at those strikes as offsets from 31000, expected median offset). Strikes are listed nearest first
+        # to the 31000 reference and the last is 5000 points away, an outlier whose forward is 5000 off: above the
+        # reference in `above`, below it in `below`. So the five lowest strikes are not the five nearest in every
+        # row, and a sort key that is dropped or turned into the strike itself is caught. The offsets are ordered so
+        # that any other count of strikes, the farthest five, the lowest or highest value, or a neighbour of the
+        # middle value gives a different answer. Row 1 repeats a value, so only rows 2 and 3 can tell the middle
+        # value from the one just below it.
         ref = 31000.0
-        strikes = [31000.0, 31010.0, 30980.0, 31030.0, 30960.0, 36000.0]
-        for offsets, median in (([-10, 50, 10, 0, 0, 5000], 0), ([-10, 50, 10, 3, 0, 5000], 3)):
+        above = [31000.0, 31010.0, 30980.0, 31030.0, 30960.0, 36000.0]
+        below = [31000.0, 30990.0, 31020.0, 30970.0, 31040.0, 26000.0]
+        for strikes, offsets, median in ((above, [-10, 50, 10, 0, 0, 5000], 0), (above, [-10, 50, 10, 3, 0, 5000], 3),
+                                         (below, [-10, 0, 10, 3, 50, -5000], 3)):
             with self.subTest(offsets=offsets):
                 contracts = []
                 for strike, offset in zip(strikes, offsets):
