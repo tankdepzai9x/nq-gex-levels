@@ -1,0 +1,16 @@
+{
+  "name": "gex-tools",
+  "private": true,
+  "type": "module",
+  "description": "Offline checks for pine/nq_gex_levels.pine (static lint + a run in the piner engine)",
+  "scripts": {
+    "postinstall": "node patch-piner.mjs",
+    "lint": "node lint.cjs ../pine/nq_gex_levels.pine",
+    "check": "node pine_check.mjs",
+    "test": "npm run lint && npm run check"
+  },
+  "devDependencies": {
+    "@heyphat/piner": "0.13.0",
+    "pinescript-v6-validator": "0.4.0"
+  }
+}
