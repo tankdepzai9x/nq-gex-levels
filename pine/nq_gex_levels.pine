@@ -125,18 +125,24 @@ if barstate.isfirst
                         for i = 1 to array.size(p) - 1
                             array<string> kv = str.split(array.get(p, i), ":")
                             if array.size(kv) > 1
-                                array.push(topD, str.tonumber(array.get(kv, 0)))
+                                float tDist = str.tonumber(array.get(kv, 0))
+                                if not na(tDist)
+                                    array.push(topD, tDist)
                 else if k == "prof"
                     if array.size(p) > 1
                         for i = 1 to array.size(p) - 1
                             array<string> kv = str.split(array.get(p, i), ":")
                             if array.size(kv) > 1
-                                array.push(profD, str.tonumber(array.get(kv, 0)))
-                                array.push(profV, str.tonumber(array.get(kv, 1)))
+                                // a half-pasted number (300: or 300:abc) drops only its own bar
+                                float pDist = str.tonumber(array.get(kv, 0))
+                                float pVal = str.tonumber(array.get(kv, 1))
+                                if not na(pDist) and not na(pVal)
+                                    array.push(profD, pDist)
+                                    array.push(profV, pVal)
     if str.trim(pasteIn) == ""
-        problem := "Paste the levels from the 'Copy GEX levels' shortcut into this indicator's settings (Inputs tab)."
+        problem := "Paste the levels from the 'Copy GEX levels' shortcut: open this indicator's settings (Inputs tab), click the Paste levels box, press Ctrl+A, then Ctrl+V."
     else if not header or na(anchorMs) or na(genMs) or na(nextMs)
-        problem := "Could not read the pasted text. Run the shortcut again and paste everything."
+        problem := "Could not read the pasted text. Run the shortcut again, click the box, press Ctrl+A, then Ctrl+V."
     else if blocks > 1
         problem := "The box holds more than one block of levels. Click the box, press Ctrl+A, then Ctrl+V."
     else if not found
@@ -144,10 +150,15 @@ if barstate.isfirst
 //#endregion
 
 //#region ───── The chart's own price at the data's as-of time
-var float anchorPx  = na
-var int   anchorBar = na
+// The last bar that closes at or before the as-of time is the anchor, but only if it ends within 15 minutes of it. A bar that ends
+// earlier (a 45-minute bar, or a daily bar that ends at 17:00 ET) does not hold the price at the as-of time: draw nothing and say so.
+int MAX_GAP_MS = 15 * 60 * 1000
+var float anchorPx    = na
+var int   anchorBar   = na
+var int   anchorClose = na
 if problem == "" and time_close <= anchorMs
-    anchorPx := close
+    anchorClose := time_close
+    anchorPx := anchorMs - time_close > MAX_GAP_MS ? na : close
     anchorBar := bar_index
 //#endregion
 
@@ -184,7 +195,8 @@ if barstate.islast
         table.cell(banner, 0, 0, problem, text_color = color.white, bgcolor = red, text_halign = text.align_left)
         table.cell(banner, 0, 1, "")
     else if na(anchorPx)
-        table.cell(banner, 0, 0, "This chart has no bar at the data's as-of time. Use a 15-minute or shorter chart and scroll back, or paste newer levels.", text_color = color.white, bgcolor = red, text_halign = text.align_left)
+        string msg = na(anchorClose) ? "This chart has no bar at the data's as-of time. Use a 15-minute or shorter chart and scroll back, or paste newer levels." : "This chart's bars do not end at the data's as-of time (" + str.format_time(anchorMs, "HH:mm", "America/New_York") + " ET). Use a 15-minute or shorter chart, or paste newer levels."
+        table.cell(banner, 0, 0, msg, text_color = color.white, bgcolor = red, text_halign = text.align_left)
         table.cell(banner, 0, 1, "")
     else
         // 1) levels in priority order
